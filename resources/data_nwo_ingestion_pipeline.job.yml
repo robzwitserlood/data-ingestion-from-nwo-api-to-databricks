@@ -4,6 +4,10 @@ resources:
     data_nwo_ingestion_pipeline_job:
       name: data_nwo_ingestion_pipeline_job
 
+      email_notifications:
+        on_failure:
+          - ${var.owner_email}
+
       trigger:
         pause_status: UNPAUSED
         periodic:

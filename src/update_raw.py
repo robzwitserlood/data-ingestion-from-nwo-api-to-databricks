@@ -8,6 +8,9 @@ from delta.tables import DeltaTable
 from databricks.connect import DatabricksSession
 from pyspark.sql import SparkSession, DataFrame
 
+class DuplicateOrNullIdentifierError(ValueError):
+    """Raised when a DataFrame's identifier column contains null or duplicate values."""
+
 def get_spark() -> SparkSession:
   spark = DatabricksSession.builder.getOrCreate()
   return spark
@@ -40,18 +43,37 @@ def read_json_projects(spark: SparkSession, paths: List[str]) -> DataFrame:
     ])
     return spark.read.format('json').schema(schema).load(paths)
 
+def assert_unique_not_null_ids(df: DataFrame, id_col: str = 'project_id') -> DataFrame:
+    """Raises DuplicateOrNullIdentifierError if id_col has any null or duplicate values.
+
+    Names the count of null values and the count of duplicated values found.
+    Returns df unchanged if the check passes.
+    """
+    null_count = df.filter(col(id_col).isNull()).count()
+    duplicate_count = (
+        df.groupBy(id_col)
+          .count()
+          .filter((col('count') > 1) & col(id_col).isNotNull())
+          .count()
+    )
+    if null_count > 0 or duplicate_count > 0:
+        raise DuplicateOrNullIdentifierError(
+            f"Column '{id_col}' has {null_count} null value(s) and {duplicate_count} "
+            f"duplicated value(s); expected all values to be unique and non-null"
+        )
+    return df
+
 def create_full_snapshot_from_df(df: DataFrame) -> DataFrame:
     """Transforms the raw projects DataFrame into the full snapshot DataFrame."""
-    return (
+    snapshot = (
         df.select(explode(col('projects')).alias('project'))
           .select(
               get_json_object(col('project'), '$.project_id').alias('project_id'),
               col('project'),
               md5(col('project')).alias('row_hash')
           )
-          .dropDuplicates(subset=['project_id'])
-          .alias('full_snapshot')
     )
+    return assert_unique_not_null_ids(snapshot, 'project_id').alias('full_snapshot')
 
 def merge_into_delta_table(spark: SparkSession, full_snapshot: DataFrame, catalog: str, schema: str) -> None:
     """Merges the full snapshot DataFrame into the Delta table."""

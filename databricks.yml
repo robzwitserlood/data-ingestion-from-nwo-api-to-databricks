@@ -11,6 +11,9 @@ variables:
   trigger_periodic_unit:
     description: Periodic unit in which the job will be triggered (e.g. DAYS, WEEKS)
     default: WEEKS
+  owner_email:
+    description: Email address to notify on job failure
+    default: ikdeelgeengegevensmet@gmail.com
 
 include:
   - resources/*.yml
@@ -35,7 +38,6 @@ targets:
       trigger_periodic_unit: DAYS
 
   stage:
-    mode: development
     workspace:
       host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
       root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/stage

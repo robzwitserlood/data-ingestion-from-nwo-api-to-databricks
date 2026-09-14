@@ -6,6 +6,7 @@ from update_raw import (
     parse_page_numbers,
     construct_file_paths,
     create_full_snapshot_from_df,
+    DuplicateOrNullIdentifierError,
 )
 
 def test_parse_page_numbers_valid():
@@ -72,14 +73,22 @@ def dataframe_raw(spark):
     )
 ])
 
-def test_create_full_snapshot_from_df(dataframe_raw):
-    # Arrange
-    df = dataframe_raw
+def test_create_full_snapshot_from_df_raises_on_duplicate_id(dataframe_raw):
+    with pytest.raises(DuplicateOrNullIdentifierError):
+        create_full_snapshot_from_df(dataframe_raw)
 
-    # Act
-    result = create_full_snapshot_from_df(df)
+@pytest.fixture
+def dataframe_raw_with_null_id(spark):
+    return spark.createDataFrame([
+        Row(
+            meta='{"page": 1}',
+            projects=[
+                '{"title": "missing project_id"}',
+                '{"project_id": "002", "title": "some title"}'
+            ]
+        )
+    ])
 
-    # Assert
-    assert result.count() == 5
-    assert set(result.columns) == {"project_id", "project", "row_hash"}
-    assert result.filter(result.project_id == "001").count() == 1
+def test_create_full_snapshot_from_df_raises_on_null_id(dataframe_raw_with_null_id):
+    with pytest.raises(DuplicateOrNullIdentifierError):
+        create_full_snapshot_from_df(dataframe_raw_with_null_id)

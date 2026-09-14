@@ -6,6 +6,8 @@ from pyspark.sql.functions import col, get_json_object, trim, when, lower, lit
 from pyspark.sql.types import StringType
 from databricks.connect import DatabricksSession
 
+from update_raw import assert_unique_not_null_ids, DuplicateOrNullIdentifierError
+
 ColumnSpec = Tuple[str, str, str]
 
 COLUMN_SPECS = [
@@ -79,9 +81,23 @@ def apply_types(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> DataFrame:
     return df.select(*exprs)
 
 
+def set_freshness_timestamp(spark: SparkSession, full_table_name: str) -> None:
+    """Sets the pipeline.last_successful_refresh_utc table property to the current UTC timestamp.
+
+    Must only be called after a table write has already succeeded, so a failed run
+    leaves the property at its previous value.
+    """
+    from datetime import datetime, timezone
+    timestamp = datetime.now(timezone.utc).isoformat()
+    spark.sql(
+        f"ALTER TABLE {full_table_name} SET TBLPROPERTIES "
+        f"('pipeline.last_successful_refresh_utc' = '{timestamp}')"
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="""Transform raw NWO projects table: 
+        description="""Transform raw NWO projects table:
         parse JSON, cleanse missing values, and apply types."""
     )
     parser.add_argument("--catalog", required=True, type=str)
@@ -98,6 +114,11 @@ if __name__ == "__main__":
     parsed = parse_project_columns(raw, COLUMN_SPECS)
     cleansed = cleanse_missing_values(parsed)
     typed = apply_types(cleansed, COLUMN_SPECS)
+    typed = assert_unique_not_null_ids(typed, 'project_id')
 
     # Write to target table
-    typed.write.mode('overwrite').saveAsTable(f'{args.catalog}.{args.schema_to}.nwo_projects')
+    full_table_name = f'{args.catalog}.{args.schema_to}.nwo_projects'
+    typed.write.mode('overwrite').saveAsTable(full_table_name)
+
+    # Record freshness only after the write has succeeded
+    set_freshness_timestamp(spark, full_table_name)

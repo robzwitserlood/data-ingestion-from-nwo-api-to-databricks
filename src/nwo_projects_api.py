@@ -6,14 +6,34 @@ from typing import Dict
 
 BASE_URL = 'https://nwopen-api.nwo.nl/NWOpen-API/api/Projects'
 
+class NWOpenAPIShapeError(ValueError):
+    """Raised when an NWOpen API response does not have the expected shape."""
+
+def validate_response_shape(data: Dict) -> None:
+    """Validates that an NWOpen API response has the expected shape.
+
+    Raises NWOpenAPIShapeError, naming the specific offending field, if:
+      - 'projects' key is missing or its value is not a list
+      - 'meta' key is missing or its value is not a dict
+      - 'meta' is a dict but its 'pages' key is missing or its value is not an int
+    """
+    if 'projects' not in data or not isinstance(data['projects'], list):
+        raise NWOpenAPIShapeError("Response is missing required field 'projects' or it is not a list")
+    if 'meta' not in data or not isinstance(data['meta'], dict):
+        raise NWOpenAPIShapeError("Response is missing required field 'meta' or it is not a dict")
+    if 'pages' not in data['meta'] or not isinstance(data['meta']['pages'], int):
+        raise NWOpenAPIShapeError("Response is missing required field 'meta.pages' or it is not an int")
+
 def fetch_data(page_nr: int = 1) -> Dict:
     """Fetches JSON data from the NWO Open API for a specific page number."""
     try:
         response = requests.get(BASE_URL, params={'page': page_nr})
         response.raise_for_status()
-        return response.json()
+        data = response.json()
     except requests.exceptions.RequestException as e:
         raise SystemExit(f"Network error occurred: {e}")
+    validate_response_shape(data)
+    return data
 
 def write_json_file(data: Dict, prefix: str, catalog: str, schema: str, page_nr: int) -> None:
     """Writes JSON data to a file in the specified catalog and schema directories."""
