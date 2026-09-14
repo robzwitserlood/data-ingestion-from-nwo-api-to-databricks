@@ -11,7 +11,7 @@ from update_raw import (
 
 def test_parse_page_numbers_valid():
     result = parse_page_numbers('["1", 2]')
-    assert result == [999, 999]  # TEMP: deliberately broken to verify CI gates deployment (T003)
+    assert result == [1, 2]
 
 def test_parse_page_numbers_invalid_json():
     with pytest.raises(ValueError):
