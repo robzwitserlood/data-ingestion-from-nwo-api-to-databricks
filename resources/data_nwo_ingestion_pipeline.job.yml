@@ -1,0 +1,77 @@
+# The main job for data_nwo_ingestion_pipeline.
+resources:
+  jobs:
+    data_nwo_ingestion_pipeline_job:
+      name: data_nwo_ingestion_pipeline_job
+
+      trigger:
+        pause_status: UNPAUSED
+        periodic:
+          interval: 1
+          unit: ${var.trigger_periodic_unit}
+
+      tasks:
+        - task_key: set_page_numbers
+          spark_python_task:
+            python_file: ../src/set_page_numbers.py
+            parameters:
+              - --last_n
+              - ${var.max_pages}
+          environment_key: Default
+        - task_key: land_response
+          depends_on:
+            - task_key: set_page_numbers
+          for_each_task:
+            inputs: "{{tasks.set_page_numbers.values.page_numbers}}"
+            concurrency: 4
+            task:
+              task_key: land_response_iteration
+              spark_python_task:
+                python_file: ../src/nwo_projects_api.py
+                parameters:
+                - --page_nr
+                - "{{input}}"
+                - --run_id
+                - "{{job.run_id}}"
+                - --catalog
+                - "${bundle.target}"
+                - --schema
+                - "raw"
+              environment_key: Default
+              max_retries: 2
+              min_retry_interval_millis: 5000
+        - task_key: update_raw
+          spark_python_task:
+            python_file: ../src/update_raw.py
+            parameters:
+              - --catalog
+              - "${bundle.target}"
+              - --schema
+              - "raw"
+              - --run_id
+              - "{{job.run_id}}"
+              - --page_numbers
+              - "{{tasks.set_page_numbers.values.page_numbers}}"
+          environment_key: Default
+          depends_on:
+            - task_key: set_page_numbers
+            - task_key: land_response
+        - task_key: update_base
+          spark_python_task:
+            python_file: ../src/update_base.py
+            parameters:
+              - --catalog
+              - "${bundle.target}"
+              - --schema_from
+              - "raw"
+              - --schema_to
+              - "base"
+          environment_key: Default
+          depends_on:
+            - task_key: update_raw
+      queue:
+        enabled: true
+      environments:
+        - environment_key: Default
+          spec:
+            environment_version: "4"

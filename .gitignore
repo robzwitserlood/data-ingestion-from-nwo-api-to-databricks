@@ -1,0 +1,13 @@
+.databricks/
+build/
+dist/
+__pycache__/
+*.egg-info
+.venv/
+scratch/**
+!scratch/README.md
+
+# AI coding assistant tool caches/config — local convenience only, not project source
+.claude/
+.opencode/
+.ai-dev-kit/

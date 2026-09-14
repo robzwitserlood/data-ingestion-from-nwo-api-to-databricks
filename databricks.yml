@@ -1,0 +1,47 @@
+# This is a Databricks asset bundle definition for data_nwo_ingestion_pipeline.
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+bundle:
+  name: data_nwo_ingestion_pipeline
+  uuid: 47fcc205-2df6-4ec5-8a4e-a81534669785
+
+variables:
+  max_pages:
+    description: Maximum number of API pages to extract (all pages if <= 0)
+    default: -1
+  trigger_periodic_unit:
+    description: Periodic unit in which the job will be triggered (e.g. DAYS, WEEKS)
+    default: WEEKS
+
+include:
+  - resources/*.yml
+  - resources/*/*.yml
+
+targets:
+  # All three targets share one Databricks Free Edition workspace (one workspace/metastore
+  # per account, per the constitution's "Environment Parity via Catalogs" principle).
+  # Environments are separated by Unity Catalog catalog (dev/stage/prod), not by workspace.
+  dev:
+    # The default target uses 'mode: development' to create a development copy.
+    # - Deployed resources get prefixed with '[dev my_user_name]'
+    # - Any job schedules and triggers are paused by default.
+    # See also https://docs.databricks.com/dev-tools/bundles/deployment-modes.html.
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
+      root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/dev
+    variables:
+      max_pages: 8
+      trigger_periodic_unit: DAYS
+
+  stage:
+    mode: development
+    workspace:
+      host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
+      root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/stage
+
+  prod:
+      mode: production
+      workspace:
+        host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
+        root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/prod
