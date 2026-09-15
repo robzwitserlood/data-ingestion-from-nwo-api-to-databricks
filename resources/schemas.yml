@@ -1,0 +1,20 @@
+# Medallion-layer schemas inside the environment catalog.
+resources:
+  schemas:
+    raw:
+      name: raw
+      catalog_name: ${resources.catalogs.environment.name}
+      comment: Immutable, append-only bronze snapshot (Principle I).
+    base:
+      name: base
+      catalog_name: ${resources.catalogs.environment.name}
+      comment: Cleaned, typed, query-ready silver table rebuilt from raw.
+    enriched:
+      name: enriched
+      catalog_name: ${resources.catalogs.environment.name}
+    curated:
+      name: curated
+      catalog_name: ${resources.catalogs.environment.name}
+    semantic:
+      name: semantic
+      catalog_name: ${resources.catalogs.environment.name}

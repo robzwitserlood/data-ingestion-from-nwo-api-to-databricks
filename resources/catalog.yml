@@ -1,0 +1,24 @@
+# Unity Catalog catalog for this environment. Name is target-derived
+# (dev/stage/prod), per the "Environment Parity via Catalogs" constitution principle.
+#
+# NOTE: Free Edition blocks catalog *creation* via API/CLI/bundle outright
+# ("Please use the UI to create a catalog with Default Storage" — confirmed by direct
+# API probe, not just a bundle quirk). This resource cannot create the catalog; it
+# exists so that, once dev/stage/prod are created once via the UI, the bundle can
+# `deployment bind` to each and manage comment/grants going forward.
+#
+# storage_root MUST be pinned to the exact value Databricks assigns a Default-Storage
+# catalog (this workspace's __databricks_managed_storage_location root — see
+# `databricks external-locations list`). storage_root is immutable: leaving it unset
+# reads as a diff against the real catalog's value, and the direct engine's response to
+# an immutable-field diff is silent destroy-then-recreate, which happened once already
+# and deleted `dev` (recreate then failed on the same UI-only restriction as creation).
+# prevent_destroy is the hard backstop in case anything else ever drifts.
+resources:
+  catalogs:
+    environment:
+      name: ${bundle.target}
+      comment: Environment catalog for data_nwo_ingestion_pipeline (${bundle.target}).
+      storage_root: s3://dbstorage-prod-ov3zg/uc/378b6b9b-e947-497b-9149-492a4b0ceb44/656c1f6a-80b9-469e-9ccb-662d5d6887e3
+      lifecycle:
+        prevent_destroy: true
