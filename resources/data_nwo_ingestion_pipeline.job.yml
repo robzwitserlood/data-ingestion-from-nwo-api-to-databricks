@@ -4,6 +4,10 @@ resources:
     data_nwo_ingestion_pipeline_job:
       name: data_nwo_ingestion_pipeline_job
 
+      email_notifications:
+        on_failure:
+          - ${var.owner_email}
+
       trigger:
         pause_status: UNPAUSED
         periodic:
@@ -34,9 +38,9 @@ resources:
                 - --run_id
                 - "{{job.run_id}}"
                 - --catalog
-                - "${bundle.target}"
+                - "${resources.catalogs.environment.name}"
                 - --schema
-                - "raw"
+                - "${resources.schemas.raw.name}"
               environment_key: Default
               max_retries: 2
               min_retry_interval_millis: 5000
@@ -45,9 +49,9 @@ resources:
             python_file: ../src/update_raw.py
             parameters:
               - --catalog
-              - "${bundle.target}"
+              - "${resources.catalogs.environment.name}"
               - --schema
-              - "raw"
+              - "${resources.schemas.raw.name}"
               - --run_id
               - "{{job.run_id}}"
               - --page_numbers
@@ -61,11 +65,11 @@ resources:
             python_file: ../src/update_base.py
             parameters:
               - --catalog
-              - "${bundle.target}"
+              - "${resources.catalogs.environment.name}"
               - --schema_from
-              - "raw"
+              - "${resources.schemas.raw.name}"
               - --schema_to
-              - "base"
+              - "${resources.schemas.base.name}"
           environment_key: Default
           depends_on:
             - task_key: update_raw

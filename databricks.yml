@@ -3,6 +3,9 @@
 bundle:
   name: data_nwo_ingestion_pipeline
   uuid: 47fcc205-2df6-4ec5-8a4e-a81534669785
+  # Unity Catalog resources (catalogs, external locations, ...) require the
+  # direct deployment engine; the terraform engine cannot create them.
+  engine: direct
 
 variables:
   max_pages:
@@ -11,6 +14,9 @@ variables:
   trigger_periodic_unit:
     description: Periodic unit in which the job will be triggered (e.g. DAYS, WEEKS)
     default: WEEKS
+  owner_email:
+    description: Email address to notify on job failure
+    default: ikdeelgeengegevensmet@gmail.com
 
 include:
   - resources/*.yml
@@ -24,6 +30,11 @@ targets:
     # The default target uses 'mode: development' to create a development copy.
     # - Deployed resources get prefixed with '[dev my_user_name]'
     # - Any job schedules and triggers are paused by default.
+    # - Unity Catalog schema/volume resources get a sanitized 'dev_<user>_' prefix on
+    #   their name (this is hardcoded into mode: development, not a `presets` setting,
+    #   and not overridable). The job resource references the schema resources'
+    #   resolved `.name` rather than hardcoding "raw"/"base" so it always targets
+    #   whatever name actually got deployed.
     # See also https://docs.databricks.com/dev-tools/bundles/deployment-modes.html.
     mode: development
     default: true
@@ -35,7 +46,6 @@ targets:
       trigger_periodic_unit: DAYS
 
   stage:
-    mode: development
     workspace:
       host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
       root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/stage

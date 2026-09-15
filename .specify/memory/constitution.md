@@ -1,18 +1,20 @@
 <!--
 Sync Impact Report
 ==================
-Version change: [TEMPLATE] → 1.0.0 (initial ratification)
-Modified principles: n/a (first version)
-Added sections:
-  - Core Principles I–VIII (all new)
-  - Technology & Environment Constraints (new, replaces [SECTION_2_NAME])
-  - Development Workflow & Quality Gates (new, replaces [SECTION_3_NAME])
-  - Governance (filled in)
+Version change: 1.0.0 → 2.0.0 (MAJOR: backward-incompatible redefinition of an
+  existing guarantee — project_id is no longer the enforced-unique key)
+Modified principles:
+  - IV. Validate the Data Contract at the Boundary — uniqueness guarantee moved
+    from project_id alone to a composite project_key (project_id + funding_scheme_id
+    + primary project leader's member_id/organisation_id), after production
+    ingestion found real, distinct projects sharing one project_id value.
+    Rationale and Verification updated to match.
+Added sections: none
 Removed sections: none
-Deferred items / TODOs: none — all placeholders resolved from user-supplied input.
-Templates requiring follow-up: none checked yet in this session (no plan/spec/tasks
-templates have been generated against this constitution); re-validate them the first
-time /speckit-plan or /speckit-tasks runs against this constitution.
+Deferred items / TODOs: none
+Templates requiring follow-up: none — no plan/spec/tasks templates have been
+generated against this constitution yet; re-validate them the first time
+/speckit-plan or /speckit-tasks runs against this constitution.
 -->
 
 # data-ingestion-from-nwo-api-to-databricks Constitution
@@ -83,20 +85,39 @@ The external NWOpen API's JSON shape (a top-level `projects` array and a
 `meta.pages` field) is an external data contract owned by a third party outside
 this project's control. The pipeline MUST fail loudly and visibly — not silently
 drop, null out, or coerce — when the API's response shape doesn't match what the
-pipeline expects. `project_id` MUST be enforced as unique and not-null in both
-`raw` and `base`.
+pipeline expects. `project_id` MUST remain non-null in both `raw` and `base`, but
+is NOT required to be unique on its own: production ingestion found real,
+distinct, unrelated funded projects (different PI, institution, and/or funding
+scheme) sharing an identical `project_id` value within a single API page. The
+pipeline instead derives a composite `project_key` — `project_id` plus
+`funding_scheme_id` and the primary project leader's `member_id` and
+`organisation_id` (the `project_members` entry with role "Project leader",
+deterministically tie-broken when a project lists more than one) — and MUST
+enforce `project_key` as unique and non-null in both `raw` and `base`.
 
 **Rationale**: this project has no influence over NWOpen's API and no schema
 registry to negotiate compatibility with, so the only defense against a silent
 upstream change is an explicit shape check at the boundary plus primary-key
 constraints downstream — the same discipline dbt-style projects apply by testing
 every model's primary key for uniqueness and non-null, adapted here for a
-non-dbt Spark pipeline.
+non-dbt Spark pipeline. `project_id` alone turned out not to satisfy that
+discipline: it is not a true unique identifier in NWOpen's own data. The
+composite `project_key` was arrived at empirically — testing candidate fields
+against every known real collision until a combination was found that
+discriminates all of them — rather than assumed from the API's documentation,
+which does not describe `project_id`'s uniqueness scope. This preserves the
+"fail loudly, never silently drop or coerce" intent for genuine data-contract
+violations (a null `project_id`, a still-colliding `project_key`) while
+accommodating this real, observed characteristic of NWOpen's identifier instead
+of treating it as a fatal contract breach every run.
 
 **Verification**: a test MUST assert that malformed/unexpected API responses
 (missing `projects`, missing `meta.pages`) raise a clear, typed error rather than
-producing empty or partial output; a test MUST assert `raw` and `base` reject
-duplicate or null `project_id` values.
+producing empty or partial output; a test MUST assert `raw` and `base` reject a
+null `project_id`; a test MUST assert `raw` and `base` reject a null or duplicate
+`project_key`; a test MUST assert that two records sharing the same `project_id`
+but differing in `funding_scheme_id` or project leader identity are retained as
+distinct rows rather than raising a false-positive duplicate error.
 
 ### V. Environment Parity via Catalogs, Not Workspaces
 
@@ -215,4 +236,4 @@ request touching `src/` or `resources/` must be checked against this
 constitution as part of review; complexity or deviation from a principle must be
 justified in the PR description, not silently introduced.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-14 | **Last Amended**: 2026-09-14
+**Version**: 2.0.0 | **Ratified**: 2026-09-14 | **Last Amended**: 2026-09-15

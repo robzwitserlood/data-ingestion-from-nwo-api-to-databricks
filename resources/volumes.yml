@@ -1,0 +1,11 @@
+# Landing volume for raw JSON pages (immutable bronze zone, Principle I).
+# Path referenced by src/nwo_projects_api.py and src/update_raw.py:
+#   /Volumes/{catalog}/raw/landing/nwo_projects/
+resources:
+  volumes:
+    landing:
+      name: landing
+      catalog_name: ${resources.schemas.raw.catalog_name}
+      schema_name: ${resources.schemas.raw.name}
+      volume_type: MANAGED
+      comment: Append-only landing zone for NWOpen API JSON pages.

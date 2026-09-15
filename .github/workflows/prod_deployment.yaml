@@ -29,9 +29,29 @@ env:
   DATABRICKS_BUNDLE_ENV: prod
 
 jobs:
+  test:
+    name: 'Test bundle'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      - name: 'Install dependencies'
+        run: uv sync
+
+      - name: 'Run tests'
+        run: uv run pytest
+
   deploy:
     name: 'Deploy bundle'
     runs-on: ubuntu-latest
+
+    needs:
+      - test
 
     steps:
       # Check out this repo, so that this workflow can access it.

@@ -6,7 +6,14 @@ from pyspark.sql.functions import col, get_json_object, trim, when, lower, lit
 from pyspark.sql.types import StringType
 from databricks.connect import DatabricksSession
 
+from update_raw import assert_unique_not_null_ids, DuplicateOrNullIdentifierError
+
 ColumnSpec = Tuple[str, str, str]
+
+# Passed through from raw as-is (already columns on the raw table, not derived
+# from the `project` JSON blob): project_id plus the project_key identity fields
+# (see update_raw.add_identity_key_fields and constitution Principle IV).
+IDENTITY_COLUMNS = ["project_id", "project_key", "funding_scheme_id", "leader_member_id", "leader_organisation_id"]
 
 COLUMN_SPECS = [
     ("$.title", "title", "string"),
@@ -35,11 +42,11 @@ def parse_project_columns(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> 
       - alias: column name to create (e.g. 'title')
       - dtype: target data type as a string ('int', 'date', 'string', ...)
 
-    Returns a DataFrame with 'project_id' plus one column per alias.
+    Returns a DataFrame with the IDENTITY_COLUMNS plus one column per alias.
     """
     selects = [get_json_object(col("project"), json_path).alias(alias)
                for json_path, alias, _ in column_specs]
-    selects = [col("project_id")] + selects
+    selects = [col(c) for c in IDENTITY_COLUMNS] + selects
     return df.select(*selects)
 
 
@@ -75,13 +82,27 @@ def apply_types(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> DataFrame:
       - dtype: target data type as a string ('int', 'date', 'string', ...)
     """
     exprs = [col(alias).cast(dtype) for _, alias, dtype in column_specs]
-    exprs = [col("project_id")] + exprs
+    exprs = [col(c) for c in IDENTITY_COLUMNS] + exprs
     return df.select(*exprs)
+
+
+def set_freshness_timestamp(spark: SparkSession, full_table_name: str) -> None:
+    """Sets the pipeline.last_successful_refresh_utc table property to the current UTC timestamp.
+
+    Must only be called after a table write has already succeeded, so a failed run
+    leaves the property at its previous value.
+    """
+    from datetime import datetime, timezone
+    timestamp = datetime.now(timezone.utc).isoformat()
+    spark.sql(
+        f"ALTER TABLE {full_table_name} SET TBLPROPERTIES "
+        f"('pipeline.last_successful_refresh_utc' = '{timestamp}')"
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="""Transform raw NWO projects table: 
+        description="""Transform raw NWO projects table:
         parse JSON, cleanse missing values, and apply types."""
     )
     parser.add_argument("--catalog", required=True, type=str)
@@ -98,6 +119,12 @@ if __name__ == "__main__":
     parsed = parse_project_columns(raw, COLUMN_SPECS)
     cleansed = cleanse_missing_values(parsed)
     typed = apply_types(cleansed, COLUMN_SPECS)
+    assert_unique_not_null_ids(typed, 'project_id', check_duplicates=False)
+    typed = assert_unique_not_null_ids(typed, 'project_key')
 
     # Write to target table
-    typed.write.mode('overwrite').saveAsTable(f'{args.catalog}.{args.schema_to}.nwo_projects')
+    full_table_name = f'{args.catalog}.{args.schema_to}.nwo_projects'
+    typed.write.mode('overwrite').saveAsTable(full_table_name)
+
+    # Record freshness only after the write has succeeded
+    set_freshness_timestamp(spark, full_table_name)
