@@ -78,6 +78,52 @@ def test_create_full_snapshot_from_df_raises_on_duplicate_id(dataframe_raw):
         create_full_snapshot_from_df(dataframe_raw)
 
 @pytest.fixture
+def dataframe_raw_colliding_project_id(spark):
+    """Two distinct projects sharing one project_id, differing in funding_scheme_id
+    and project leader identity -- the real pattern found in NWOpen's data
+    (constitution Principle IV)."""
+    return spark.createDataFrame([
+        Row(
+            meta='{"page": 1}',
+            projects=[
+                '{"project_id": "001", "title": "First distinct project", "funding_scheme_id": 111, '
+                '"project_members": [{"role": "Project leader", "member_id": 1, "organisation_id": 10}]}',
+                '{"project_id": "001", "title": "Second distinct project", "funding_scheme_id": 222, '
+                '"project_members": [{"role": "Project leader", "member_id": 2, "organisation_id": 20}]}',
+            ]
+        )
+    ])
+
+def test_create_full_snapshot_from_df_disambiguates_colliding_project_id(dataframe_raw_colliding_project_id):
+    result = create_full_snapshot_from_df(dataframe_raw_colliding_project_id)
+    rows = result.collect()
+    assert len(rows) == 2
+    assert {row["project_id"] for row in rows} == {"001"}
+    assert len({row["project_key"] for row in rows}) == 2
+
+@pytest.fixture
+def dataframe_raw_multiple_leaders(spark):
+    """A project listing more than one "Project leader" -- the primary leader
+    must be picked deterministically (lowest member_id first)."""
+    return spark.createDataFrame([
+        Row(
+            meta='{"page": 1}',
+            projects=[
+                '{"project_id": "003", "funding_scheme_id": 333, '
+                '"project_members": ['
+                '{"role": "Project leader", "member_id": 200, "organisation_id": 20}, '
+                '{"role": "Project leader", "member_id": 100, "organisation_id": 10}'
+                ']}'
+            ]
+        )
+    ])
+
+def test_create_full_snapshot_from_df_picks_lowest_member_id_leader(dataframe_raw_multiple_leaders):
+    row = create_full_snapshot_from_df(dataframe_raw_multiple_leaders).collect()[0]
+    assert row["leader_member_id"] == "100"
+    assert row["leader_organisation_id"] == "10"
+
+@pytest.fixture
 def dataframe_raw_with_null_id(spark):
     return spark.createDataFrame([
         Row(

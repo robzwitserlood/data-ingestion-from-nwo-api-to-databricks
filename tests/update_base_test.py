@@ -15,18 +15,21 @@ from update_raw import DuplicateOrNullIdentifierError
 @pytest.fixture
 def raw_projects_df(spark):
     return spark.createDataFrame([
-        Row(project_id="001", project='{"title": "Study A", "department": "Physics", "sub_department": "Quantum", "reporting_year": "2020", "start_date": "2020-01-01", "end_date": "2021-01-01", "award_amount": "10000", "summary_nl": "Samenvatting", "summary_en": "Summary"}'),
-        Row(project_id="002", project='{"title": "Study B", "department": "n/a", "sub_department": "-", "reporting_year": "2021", "start_date": "2021-01-01", "end_date": "2022-01-01", "award_amount": "20000", "summary_nl": "", "summary_en": "   "}'),
+        Row(project_id="001", project_key="001|111|1|10", funding_scheme_id="111", leader_member_id="1", leader_organisation_id="10",
+            project='{"title": "Study A", "department": "Physics", "sub_department": "Quantum", "reporting_year": "2020", "start_date": "2020-01-01", "end_date": "2021-01-01", "award_amount": "10000", "summary_nl": "Samenvatting", "summary_en": "Summary"}'),
+        Row(project_id="002", project_key="002|222|2|20", funding_scheme_id="222", leader_member_id="2", leader_organisation_id="20",
+            project='{"title": "Study B", "department": "n/a", "sub_department": "-", "reporting_year": "2021", "start_date": "2021-01-01", "end_date": "2022-01-01", "award_amount": "20000", "summary_nl": "", "summary_en": "   "}'),
     ])
 
 
 def test_parse_project_columns(raw_projects_df):
     result = parse_project_columns(raw_projects_df, COLUMN_SPECS)
-    expected_columns = {"project_id"} | {alias for _, alias, _ in COLUMN_SPECS}
+    expected_columns = {"project_id", "project_key", "funding_scheme_id", "leader_member_id", "leader_organisation_id"} | {alias for _, alias, _ in COLUMN_SPECS}
     assert set(result.columns) == expected_columns
     row = result.filter(result.project_id == "001").collect()[0]
     assert row["title"] == "Study A"
     assert row["department"] == "Physics"
+    assert row["project_key"] == "001|111|1|10"
 
 
 def test_cleanse_missing_values_normalizes_sentinels(spark):

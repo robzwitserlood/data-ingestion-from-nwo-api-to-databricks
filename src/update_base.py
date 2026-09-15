@@ -10,6 +10,11 @@ from update_raw import assert_unique_not_null_ids, DuplicateOrNullIdentifierErro
 
 ColumnSpec = Tuple[str, str, str]
 
+# Passed through from raw as-is (already columns on the raw table, not derived
+# from the `project` JSON blob): project_id plus the project_key identity fields
+# (see update_raw.add_identity_key_fields and constitution Principle IV).
+IDENTITY_COLUMNS = ["project_id", "project_key", "funding_scheme_id", "leader_member_id", "leader_organisation_id"]
+
 COLUMN_SPECS = [
     ("$.title", "title", "string"),
     ("$.department", "department", "string"),
@@ -37,11 +42,11 @@ def parse_project_columns(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> 
       - alias: column name to create (e.g. 'title')
       - dtype: target data type as a string ('int', 'date', 'string', ...)
 
-    Returns a DataFrame with 'project_id' plus one column per alias.
+    Returns a DataFrame with the IDENTITY_COLUMNS plus one column per alias.
     """
     selects = [get_json_object(col("project"), json_path).alias(alias)
                for json_path, alias, _ in column_specs]
-    selects = [col("project_id")] + selects
+    selects = [col(c) for c in IDENTITY_COLUMNS] + selects
     return df.select(*selects)
 
 
@@ -77,7 +82,7 @@ def apply_types(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> DataFrame:
       - dtype: target data type as a string ('int', 'date', 'string', ...)
     """
     exprs = [col(alias).cast(dtype) for _, alias, dtype in column_specs]
-    exprs = [col("project_id")] + exprs
+    exprs = [col(c) for c in IDENTITY_COLUMNS] + exprs
     return df.select(*exprs)
 
 
@@ -114,7 +119,8 @@ if __name__ == "__main__":
     parsed = parse_project_columns(raw, COLUMN_SPECS)
     cleansed = cleanse_missing_values(parsed)
     typed = apply_types(cleansed, COLUMN_SPECS)
-    typed = assert_unique_not_null_ids(typed, 'project_id')
+    assert_unique_not_null_ids(typed, 'project_id', check_duplicates=False)
+    typed = assert_unique_not_null_ids(typed, 'project_key')
 
     # Write to target table
     full_table_name = f'{args.catalog}.{args.schema_to}.nwo_projects'
