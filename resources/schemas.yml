@@ -1,20 +1,25 @@
 # Medallion-layer schemas inside the environment catalog.
+#
+# The catalog itself (named after the target: dev/stage/prod) is NOT a bundle resource.
+# Free Edition only allows creating Default-Storage catalogs via the UI, so each one is
+# created once by hand and referenced here by name. Keeping it out of the bundle also
+# means a deploy can never destroy/recreate it (which once deleted `dev`).
 resources:
   schemas:
     raw:
       name: raw
-      catalog_name: ${resources.catalogs.environment.name}
+      catalog_name: ${bundle.target}
       comment: Immutable, append-only bronze snapshot (Principle I).
     base:
       name: base
-      catalog_name: ${resources.catalogs.environment.name}
+      catalog_name: ${bundle.target}
       comment: Cleaned, typed, query-ready silver table rebuilt from raw.
     enriched:
       name: enriched
-      catalog_name: ${resources.catalogs.environment.name}
+      catalog_name: ${bundle.target}
     curated:
       name: curated
-      catalog_name: ${resources.catalogs.environment.name}
+      catalog_name: ${bundle.target}
     semantic:
       name: semantic
-      catalog_name: ${resources.catalogs.environment.name}
+      catalog_name: ${bundle.target}

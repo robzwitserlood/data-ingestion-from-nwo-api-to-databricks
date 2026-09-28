@@ -40,7 +40,7 @@ targets:
     default: true
     workspace:
       host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
-      root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/dev
+      root_path: ~/.bundle/${bundle.name}/dev
     variables:
       max_pages: 8
       trigger_periodic_unit: DAYS
@@ -48,10 +48,10 @@ targets:
   stage:
     workspace:
       host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
-      root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/stage
+      root_path: ~/.bundle/${bundle.name}/stage
 
   prod:
       mode: production
       workspace:
         host: https://dbc-122f0c0d-dc6f.cloud.databricks.com
-        root_path: ~/Workspace/Users/ikdeelgeengegevensmet@gmail.com/.bundle/${bundle.name}/prod
+        root_path: ~/.bundle/${bundle.name}/prod
