@@ -1,11 +1,11 @@
 import pytest
-from unittest.mock import MagicMock, patch
 from pyspark.sql import Row
 
 from update_raw import (
     parse_page_numbers,
     construct_file_paths,
     create_full_snapshot_from_df,
+    assert_unique_not_null_ids,
     DuplicateOrNullIdentifierError,
 )
 
@@ -138,3 +138,19 @@ def dataframe_raw_with_null_id(spark):
 def test_create_full_snapshot_from_df_raises_on_null_id(dataframe_raw_with_null_id):
     with pytest.raises(DuplicateOrNullIdentifierError):
         create_full_snapshot_from_df(dataframe_raw_with_null_id)
+
+def test_assert_unique_not_null_ids_raises_on_duplicate_id(spark):
+    df = spark.createDataFrame([
+        Row(project_id="001", title="A"),
+        Row(project_id="001", title="B"),
+    ])
+    with pytest.raises(DuplicateOrNullIdentifierError):
+        assert_unique_not_null_ids(df, 'project_id')
+
+def test_assert_unique_not_null_ids_raises_on_null_id(spark):
+    df = spark.createDataFrame([
+        Row(project_id=None, title="A"),
+        Row(project_id="002", title="B"),
+    ])
+    with pytest.raises(DuplicateOrNullIdentifierError):
+        assert_unique_not_null_ids(df, 'project_id')

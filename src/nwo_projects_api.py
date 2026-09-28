@@ -35,9 +35,9 @@ def fetch_data(page_nr: int = 1) -> Dict:
     validate_response_shape(data)
     return data
 
-def write_json_file(data: Dict, prefix: str, catalog: str, schema: str, page_nr: int) -> None:
+def write_json_file(data: Dict, prefix: str, catalog: str, schema: str, page_nr: int, base_dir: str = '/Volumes') -> None:
     """Writes JSON data to a file in the specified catalog and schema directories."""
-    dir_path = f'/Volumes/{catalog}/{schema}/landing/nwo_projects/'
+    dir_path = f'{base_dir}/{catalog}/{schema}/landing/nwo_projects/'
     try:
         os.makedirs(dir_path, exist_ok=True)
         file_path = f'{dir_path}{prefix}_page{page_nr}.json'
