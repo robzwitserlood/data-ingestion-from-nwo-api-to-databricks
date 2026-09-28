@@ -10,6 +10,7 @@ from update_base import (
     parse_project_columns,
     cleanse_missing_values,
     apply_types,
+    find_cast_failures,
     set_freshness_timestamp,
 )
 
@@ -27,6 +28,8 @@ def raw_projects_df(spark):
 IDENTITY_SCHEMA = "project_id string, project_key string, funding_scheme_id string, leader_member_id string, leader_organisation_id string"
 IDENTITY_001 = ("001", "001|111|1|10", "111", "1", "10")
 IDENTITY_002 = ("002", "002|222|2|20", "222", "2", "20")
+PARSED_SCHEMA = (IDENTITY_SCHEMA + ", title string, department string, sub_department string, reporting_year string, "
+                 "start_date string, end_date string, award_amount string, summary_nl string, summary_en string")
 
 
 def test_parse_project_columns(spark, raw_projects_df):
@@ -35,8 +38,7 @@ def test_parse_project_columns(spark, raw_projects_df):
             IDENTITY_001 + ("Study A", "Physics", "Quantum", "2020", "2020-01-01", "2021-01-01", "10000", "Samenvatting", "Summary"),
             IDENTITY_002 + ("Study B", "n/a", "-", "2021", "2021-01-01", "2022-01-01", "20000", "", "   "),
         ],
-        IDENTITY_SCHEMA + ", title string, department string, sub_department string, reporting_year string, "
-        "start_date string, end_date string, award_amount string, summary_nl string, summary_en string",
+        PARSED_SCHEMA,
     )
     assertDataFrameEqual(parse_project_columns(raw_projects_df, COLUMN_SPECS), expected)
 
@@ -67,6 +69,34 @@ def test_parse_cleanse_and_apply_types(spark, raw_projects_df):
         "start_date date, end_date date, award_amount int, summary_nl string, summary_en string",
     )
     assertDataFrameEqual(typed, expected)
+
+
+def test_apply_types_nulls_uncastable_values(spark):
+    df = spark.createDataFrame(
+        [IDENTITY_001 + ("Study A", None, None, "abc", "2020-13-45", "2021-01-01", "10000.50", None, None)],
+        PARSED_SCHEMA,
+    )
+    row = apply_types(df, COLUMN_SPECS).collect()[0]
+    assert row["reporting_year"] is None
+    assert row["start_date"] is None
+    assert row["award_amount"] is None
+    assert row["end_date"] == datetime.date(2021, 1, 1)
+
+
+def test_find_cast_failures_counts_per_column(spark):
+    df = spark.createDataFrame(
+        [
+            IDENTITY_001 + ("Study A", None, None, "abc", "2020-01-01", "2021-01-01", "10000.50", None, None),
+            IDENTITY_002 + ("Study B", None, None, "2021", "2021-01-01", None, "n/a", None, None),
+        ],
+        PARSED_SCHEMA,
+    )
+    assert find_cast_failures(df, COLUMN_SPECS) == {"reporting_year": 1, "award_amount": 2}
+
+
+def test_find_cast_failures_empty_for_clean_data(raw_projects_df):
+    parsed = parse_project_columns(raw_projects_df, COLUMN_SPECS)
+    assert find_cast_failures(cleanse_missing_values(parsed), COLUMN_SPECS) == {}
 
 
 def test_set_freshness_timestamp_calls_alter_table_with_correct_table_name():

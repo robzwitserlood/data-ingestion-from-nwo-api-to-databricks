@@ -1,8 +1,8 @@
 import argparse
-from typing import Iterable, Tuple
+from typing import Dict, Iterable, Tuple
 
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, get_json_object, trim, when, lower, lit
+from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql.functions import col, count, expr, get_json_object, trim, when, lower, lit
 from pyspark.sql.types import StringType
 from databricks.connect import DatabricksSession
 
@@ -72,16 +72,37 @@ def cleanse_missing_values(df: DataFrame) -> DataFrame:
     return df.select(*exprs)
 
 
+def _try_cast(alias: str, dtype: str) -> Column:
+    """Cast a column, yielding null instead of an error when a value can't be cast."""
+    return expr(f"try_cast(`{alias}` AS {dtype})")
+
+
+def find_cast_failures(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> Dict[str, int]:
+    """
+    Count, per column, the non-null values that apply_types would turn into null
+    because they can't be cast to the column's dtype.
+
+    Returns only columns with at least one failure, e.g. {'award_amount': 3}.
+    """
+    counts = [count(when(col(alias).isNotNull() & _try_cast(alias, dtype).isNull(), 1)).alias(alias)
+              for _, alias, dtype in column_specs if dtype != "string"]
+    if not counts:
+        return {}
+    row = df.select(*counts).collect()[0]
+    return {alias: n for alias, n in row.asDict().items() if n > 0}
+
+
 def apply_types(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> DataFrame:
     """
     Cast columns according to column_specs and return a typed projection.
+    Values that can't be cast become null; use find_cast_failures to report them.
 
     column_specs: iterable of tuples (json_path, alias, dtype)
       - json_path: JSONPath string used with get_json_object (e.g. '$.title')
       - alias: column name to create (e.g. 'title')
       - dtype: target data type as a string ('int', 'date', 'string', ...)
     """
-    exprs = [col(alias).cast(dtype) for _, alias, dtype in column_specs]
+    exprs = [_try_cast(alias, dtype).alias(alias) for _, alias, dtype in column_specs]
     exprs = [col(c) for c in IDENTITY_COLUMNS] + exprs
     return df.select(*exprs)
 
@@ -118,6 +139,9 @@ if __name__ == "__main__":
     # Transform: parse -> cleanse -> type
     parsed = parse_project_columns(raw, COLUMN_SPECS)
     cleansed = cleanse_missing_values(parsed)
+    dtypes = {alias: dtype for _, alias, dtype in COLUMN_SPECS}
+    for column, n in find_cast_failures(cleansed, COLUMN_SPECS).items():
+        print(f"WARNING: {n} value(s) in column '{column}' could not be cast to {dtypes[column]} and were set to null")
     typed = apply_types(cleansed, COLUMN_SPECS)
     assert_unique_not_null_ids(typed, 'project_id', check_duplicates=False)
     typed = assert_unique_not_null_ids(typed, 'project_key')
