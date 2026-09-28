@@ -37,21 +37,24 @@ def allow_stderr_output(config: pytest.Config):
         yield
 
 
-def pytest_configure(config: pytest.Config):
-    """Configure pytest session."""
-    with allow_stderr_output(config):
-        enable_fallback_compute()
-
-        # Initialize Spark session eagerly, so it is available even when
-        # SparkSession.builder.getOrCreate() is used. For DB Connect 15+,
-        # we validate version compatibility with the remote cluster.
-        if hasattr(DatabricksSession.builder, "validateSession"):
-            DatabricksSession.builder.validateSession().getOrCreate()
-        else:
-            DatabricksSession.builder.getOrCreate()
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]):
+    """Mark every test that (directly or via another fixture) uses `spark`."""
+    for item in items:
+        if "spark" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.spark)
 
 
 @pytest.fixture(scope="session")
-def spark() -> SparkSession:
-    """Provide a SparkSession fixture for tests."""
-    return DatabricksSession.builder.getOrCreate()
+def spark(pytestconfig: pytest.Config) -> SparkSession:
+    """Provide a SparkSession fixture for tests.
+
+    Created lazily on first use, so tests that don't need Spark run without a
+    Databricks connection (e.g. `uv run pytest -m "not spark"`).
+    """
+    with allow_stderr_output(pytestconfig):
+        enable_fallback_compute()
+
+        # For DB Connect 15+, validate version compatibility with the remote cluster.
+        if hasattr(DatabricksSession.builder, "validateSession"):
+            return DatabricksSession.builder.validateSession().getOrCreate()
+        return DatabricksSession.builder.getOrCreate()

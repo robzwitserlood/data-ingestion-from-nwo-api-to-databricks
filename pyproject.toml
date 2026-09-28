@@ -17,6 +17,9 @@ pythonpath = "src"
 testpaths = [
     "tests",
 ]
+markers = [
+    "spark: needs a Spark session via Databricks Connect (deselect with '-m \"not spark\"')",
+]
 
 [build-system]
 requires = ["hatchling"]

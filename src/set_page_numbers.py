@@ -1,5 +1,4 @@
 import argparse
-from databricks.sdk.runtime import *
 from nwo_projects_api import fetch_data
 from typing import List
 
@@ -9,6 +8,9 @@ def get_page_numbers() -> List[int]:
     return list(range(1, first_page['meta']['pages'] + 1))
 
 if __name__ == "__main__":
+    # Imported here, not at module level: it authenticates against Databricks on import.
+    from databricks.sdk.runtime import dbutils
+
     parser = argparse.ArgumentParser(description="Retrieve and set page numbers for NWO projects.")
     parser.add_argument("--last_n", required=False, type=str, default=None, help="Number of last pages to retrieve")
     last_n = int(parser.parse_args().last_n)

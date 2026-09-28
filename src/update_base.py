@@ -1,12 +1,19 @@
 import argparse
-from typing import Iterable, Tuple
+from typing import Dict, Iterable, Tuple
 
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, get_json_object, trim, when, lower, lit
+from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql.functions import col, count, expr, get_json_object, trim, when, lower, lit
 from pyspark.sql.types import StringType
 from databricks.connect import DatabricksSession
 
+from update_raw import assert_unique_not_null_ids, DuplicateOrNullIdentifierError
+
 ColumnSpec = Tuple[str, str, str]
+
+# Passed through from raw as-is (already columns on the raw table, not derived
+# from the `project` JSON blob): project_id plus the project_key identity fields
+# (see update_raw.add_identity_key_fields and constitution Principle IV).
+IDENTITY_COLUMNS = ["project_id", "project_key", "funding_scheme_id", "leader_member_id", "leader_organisation_id"]
 
 COLUMN_SPECS = [
     ("$.title", "title", "string"),
@@ -35,11 +42,11 @@ def parse_project_columns(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> 
       - alias: column name to create (e.g. 'title')
       - dtype: target data type as a string ('int', 'date', 'string', ...)
 
-    Returns a DataFrame with 'project_id' plus one column per alias.
+    Returns a DataFrame with the IDENTITY_COLUMNS plus one column per alias.
     """
     selects = [get_json_object(col("project"), json_path).alias(alias)
                for json_path, alias, _ in column_specs]
-    selects = [col("project_id")] + selects
+    selects = [col(c) for c in IDENTITY_COLUMNS] + selects
     return df.select(*selects)
 
 
@@ -65,23 +72,58 @@ def cleanse_missing_values(df: DataFrame) -> DataFrame:
     return df.select(*exprs)
 
 
+def _try_cast(alias: str, dtype: str) -> Column:
+    """Cast a column, yielding null instead of an error when a value can't be cast."""
+    return expr(f"try_cast(`{alias}` AS {dtype})")
+
+
+def find_cast_failures(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> Dict[str, int]:
+    """
+    Count, per column, the non-null values that apply_types would turn into null
+    because they can't be cast to the column's dtype.
+
+    Returns only columns with at least one failure, e.g. {'award_amount': 3}.
+    """
+    counts = [count(when(col(alias).isNotNull() & _try_cast(alias, dtype).isNull(), 1)).alias(alias)
+              for _, alias, dtype in column_specs if dtype != "string"]
+    if not counts:
+        return {}
+    row = df.select(*counts).collect()[0]
+    return {alias: n for alias, n in row.asDict().items() if n > 0}
+
+
 def apply_types(df: DataFrame, column_specs: Iterable[ColumnSpec]) -> DataFrame:
     """
     Cast columns according to column_specs and return a typed projection.
+    Values that can't be cast become null; use find_cast_failures to report them.
 
     column_specs: iterable of tuples (json_path, alias, dtype)
       - json_path: JSONPath string used with get_json_object (e.g. '$.title')
       - alias: column name to create (e.g. 'title')
       - dtype: target data type as a string ('int', 'date', 'string', ...)
     """
-    exprs = [col(alias).cast(dtype) for _, alias, dtype in column_specs]
-    exprs = [col("project_id")] + exprs
+    exprs = [_try_cast(alias, dtype).alias(alias) for _, alias, dtype in column_specs]
+    exprs = [col(c) for c in IDENTITY_COLUMNS] + exprs
     return df.select(*exprs)
+
+
+def set_freshness_timestamp(spark: SparkSession, full_table_name: str) -> None:
+    """Sets the pipeline.last_successful_refresh_utc table property to the current UTC timestamp.
+
+    Must only be called after a table write has already succeeded, so a failed run
+    leaves the property at its previous value.
+    """
+    from datetime import datetime, timezone
+    timestamp = datetime.now(timezone.utc).isoformat()
+    spark.sql(
+        f"ALTER TABLE {full_table_name} SET TBLPROPERTIES "
+        f"('pipeline.last_successful_refresh_utc' = '{timestamp}')"
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="""Transform raw NWO projects table: 
+        description="""Transform raw NWO projects table:
         parse JSON, cleanse missing values, and apply types."""
     )
     parser.add_argument("--catalog", required=True, type=str)
@@ -97,7 +139,16 @@ if __name__ == "__main__":
     # Transform: parse -> cleanse -> type
     parsed = parse_project_columns(raw, COLUMN_SPECS)
     cleansed = cleanse_missing_values(parsed)
+    dtypes = {alias: dtype for _, alias, dtype in COLUMN_SPECS}
+    for column, n in find_cast_failures(cleansed, COLUMN_SPECS).items():
+        print(f"WARNING: {n} value(s) in column '{column}' could not be cast to {dtypes[column]} and were set to null")
     typed = apply_types(cleansed, COLUMN_SPECS)
+    assert_unique_not_null_ids(typed, 'project_id', check_duplicates=False)
+    typed = assert_unique_not_null_ids(typed, 'project_key')
 
     # Write to target table
-    typed.write.mode('overwrite').saveAsTable(f'{args.catalog}.{args.schema_to}.nwo_projects')
+    full_table_name = f'{args.catalog}.{args.schema_to}.nwo_projects'
+    typed.write.mode('overwrite').saveAsTable(full_table_name)
+
+    # Record freshness only after the write has succeeded
+    set_freshness_timestamp(spark, full_table_name)

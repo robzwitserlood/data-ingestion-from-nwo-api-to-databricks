@@ -32,12 +32,37 @@ env:
   DATABRICKS_BUNDLE_ENV: stage
 
 jobs:
+  # Run the test suite to ensure code quality and correctness before deployment.
+  test:
+    name: 'Test bundle'
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out this repo, so that this workflow can access it.
+      - uses: actions/checkout@v4
+
+      # Download and install uv for Python dependency management.
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      # Install the project and development dependencies (pytest, databricks-connect, databricks-dlt).
+      - name: 'Install dependencies'
+        run: uv sync
+
+      # Run the test suite.
+      - name: 'Run tests'
+        run: uv run pytest
+
   # Used by the "pipeline_update" job to deploy the bundle.
   # Bundle validation is automatically performed as part of this deployment.
   # If validation fails, this workflow fails.
   deploy:
     name: 'Deploy bundle'
     runs-on: ubuntu-latest
+
+    needs:
+      - test
 
     steps:
       # Check out this repo, so that this workflow can access it.
